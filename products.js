@@ -58,9 +58,25 @@ app.get('/products/:id', (req, res) => {
   
   
 });
+// Middleware : la fonction pour authentifier l'utilisateur à chacune de ses requetes
+const authenticate = (req, res, next) => {
+  const headerToken = req.headers.authorization;
+  if (!headerToken) {
+     return res.status(401).json({ message: 'Authorization header missing' });
+  }
+  const token = headerToken.split(' ')[1];
+  try {
+     const decodedToken = jwt.verify(token, secret);
+     req.user = decodedToken;
+     next();
+  } catch (error) {
+     return res.status(401).json({ message: 'Invalid token' });
+  }
+};
+
 
 // Ajout d'un produit
-app.post('/ajproducts', (req, res) => {
+app.post('/ajproducts',authenticate, (req, res) => {
 let client=requettes.client 
   let {id, name, description, price, stock } = req.body;
   let newProduct = { id, name, description, price, stock };
@@ -76,7 +92,7 @@ let client=requettes.client
 });
 
 // Mise à jour d'un produit selon son ID
-app.put('/mjproducts/:id', (req, res) => {
+app.put('/mjproducts/:id',authenticate,(req, res) => {
     let client=requettes.client;
     let id = req.params.id;
     let { name, description, price, stock } = req.body;
@@ -93,7 +109,7 @@ app.put('/mjproducts/:id', (req, res) => {
   });
 
 // Suppression d'un produit selon son ID
-app.delete('/supproducts/:id', (req, res) => {
+app.delete('/supproducts/:id',authenticate, (req, res) => {
     let client=requettes.client 
     let id = req.params.id;
     requettes.DeleteProduct(id,client, (error, data) => {
@@ -106,11 +122,6 @@ app.delete('/supproducts/:id', (req, res) => {
     });
     
   });
-
- 
-
-
-//-----------------------------------------------------
 //backend de register 
 //la 1er methode avec hach code 
 app.post('/register', (req, res) => {
@@ -186,16 +197,33 @@ app.post('/register', (req, res) => {
 //     }
 // });
 
-//----------------------------------------------------------
+
+
 //backend de login 
+// async function checkCredentials(email, password) {
+//   let client =requettes.client
+//   try {
+//     const result = await client.query('SELECT * FROM users WHERE email = $1 AND password = $2', [email, password]);
+//     return result.rows[0];
+//   } catch(err) {
+//     console.error(err);
+//   }
+// }
 async function checkCredentials(email, password) {
   let client =requettes.client
-  try {
-    const result = await client.query('SELECT * FROM users WHERE email = $1 AND password = $2', [email, password]);
-    return result.rows[0];
-  } catch(err) {
-    console.error(err);
+  const sql = { 
+  text: 'SELECT * FROM users WHERE email = $1', 
+  values: [email],}; 
+  const results = await client.query(sql); 
+  if (results.rows.length > 0) {
+    const user = results.rows[0]; 
+    const chek = await bcrypt.compare(password, user.password);
+    if (chek) { 
+      return user; 
+    } 
+  
   }
+  return null;
 }
 
 app.post('/login',async (req, res) => {
@@ -206,32 +234,17 @@ app.post('/login',async (req, res) => {
   if (!user) {
     res.status(403).send('Wrong credentials');
   } else {
-    const authToken = Math.random().toString();
-    res.cookie('authToken', authToken);
-    res.json({ message: 'Authentication success' });
+    const token = jwt.sign({email},secret);
+    // res.cookie('authToken', authToken);
+    res.json({ message: 'Authentication success',token});
+    console.log(token)
+
   }
 });
 
-// Middleware : la fonction pour authentifier l'utilisateur à chacune de ses requetes
-const authenticate =(req, res, next) => {
-  const headerToken = req.headers.authorization;
-  if (!headerToken) {
-     return res.status(401).json({ message: 'Authorization header missing' });
-  }
-  const token = headerToken.split(' ')[1];
-  try {
-     const decodedToken = jwt.verify(token, secret);
-     req.user = decodedToken;
-     next();
-  } catch (error) {
-     return res.status(401).json({ message: 'Invalid token' });
-  }
-};
-app.use(authenticate)
 
-app.get('/products', authenticate,(req, res) => {
-  res.send('Bienvenue sur mon application !');
-});
+
+
 
 
 app.listen(port, () => {
